@@ -5,11 +5,12 @@ Generate platform icon PNGs for a Flutter app from a single master PNG.
 - Android launcher icons (mipmap-*)
 - iOS AppIcon.appiconset icons
 - macOS AppIcon.appiconset icons
+- Windows multi-size .ico for Flutter (windows/runner/resources/app_icon.ico)
 
 Usage:
     python generate_flutter_icons.py master_icon.png /path/to/flutter_project
 
-The flutter_project path should be the root (with android/, ios/, macos/ folders).
+The flutter_project path should be the root (with android/, ios/, macos/, windows/ folders).
 """
 
 import argparse
@@ -20,6 +21,7 @@ from PIL import Image
 
 
 # ------------ CONFIG: output sizes & paths -----------------
+
 
 def get_android_icons(base: Path):
     """Return mapping of output path -> pixel size for Android launcher icons."""
@@ -91,6 +93,22 @@ def get_macos_icons(base: Path):
     }
 
 
+def get_windows_ico_path_and_sizes(base: Path):
+    """
+    Return the path for the Windows .ico file and the list of icon sizes (px).
+
+    This follows the Flutter Windows template icon path:
+        windows/runner/resources/app_icon.ico
+
+    Sizes are chosen based on Windows 11 scale-factor usage:
+      Context/menu/tray, taskbar, Start pins → combined unique list:
+      16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 256
+    """
+    ico_path = base / "windows" / "runner" / "resources" / "app_icon.ico"
+    windows_sizes = [16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 256]
+    return ico_path, windows_sizes
+
+
 # ------------ core logic -----------------
 
 
@@ -111,7 +129,7 @@ def generate_icons(master_path: Path, project_root: Path):
         img = square
         w = h = max_dim
 
-    # Determine maximum size requested
+    # Collect all PNG targets
     all_targets = {}
     all_targets.update(get_android_icons(project_root))
     all_targets.update(get_ios_icons(project_root))
@@ -119,9 +137,12 @@ def generate_icons(master_path: Path, project_root: Path):
 
     max_target = max(all_targets.values())
     if w < max_target:
-        print(f"[WARN] Master icon is {w}px, but max target size is {max_target}px. "
-              f"Upscaling may reduce quality.")
+        print(
+            f"[WARN] Master icon is {w}px, but max PNG target size is {max_target}px. "
+            f"Upscaling may reduce quality."
+        )
 
+    # Generate platform PNGs
     for out_path, size in sorted(all_targets.items(), key=lambda kv: kv[1]):
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -131,11 +152,31 @@ def generate_icons(master_path: Path, project_root: Path):
         rel = os.path.relpath(out_path, project_root)
         print(f"[OK] {size}x{size} -> {rel}")
 
+    # Generate Windows multi-size ICO
+    ico_path, windows_sizes = get_windows_ico_path_and_sizes(project_root)
+    ico_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Pillow will generate multiple sizes from the single RGBA master image.
+    # ICO format supports up to 256x256 per entry.
+    ico_sizes = [(s, s) for s in windows_sizes]
+    img.save(ico_path, format="ICO", sizes=ico_sizes)
+    rel_ico = os.path.relpath(ico_path, project_root)
+    sizes_str = ", ".join(f"{s}x{s}" for s in windows_sizes)
+    print(f"[OK] ICO ({sizes_str}) -> {rel_ico}")
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate Flutter platform icons from a master PNG.")
-    parser.add_argument("master_icon", help="Path to master PNG (preferably 1024x1024 with transparency).")
-    parser.add_argument("project_root", help="Path to the root of the Flutter project (contains android/, ios/, macos/).")
+    parser = argparse.ArgumentParser(
+        description="Generate Flutter platform icons from a master PNG."
+    )
+    parser.add_argument(
+        "master_icon",
+        help="Path to master PNG (preferably 1024x1024 with transparency).",
+    )
+    parser.add_argument(
+        "project_root",
+        help="Path to the root of the Flutter project (contains android/, ios/, macos/, windows/).",
+    )
     args = parser.parse_args()
 
     master_path = Path(args.master_icon).expanduser().resolve()
