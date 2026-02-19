@@ -12,7 +12,7 @@ Generate platform icon PNGs for a Flutter app from a single master PNG.
 Usage:
     python generate_flutter_icons.py master_icon.png /path/to/flutter_project
 
-The flutter_project path should be the root (with android/, ios/, macos/, windows/ folders).
+The flutter_project path should be the root (with android/, ios/, linux/, macos/, web/, windows/ folders).
 """
 
 import argparse
@@ -188,14 +188,20 @@ def generate_icons(master_path: Path, project_root: Path, platforms=None):
         if platform in PLATFORM_GENERATORS:
             all_targets.update(PLATFORM_GENERATORS[platform](project_root))
 
-    if all_targets:
-        max_target = max(all_targets.values())
+    # Check if master icon is smaller than the largest target across all selected platforms
+    all_sizes = list(all_targets.values())
+    if "windows" in platforms:
+        _, windows_sizes = get_windows_ico_path_and_sizes(project_root)
+        all_sizes.extend(windows_sizes)
+    if all_sizes:
+        max_target = max(all_sizes)
         if w < max_target:
             print(
-                f"[WARN] Master icon is {w}px, but max PNG target size is {max_target}px. "
+                f"[WARN] Master icon is {w}px, but max target size is {max_target}px. "
                 f"Upscaling may reduce quality."
             )
 
+    if all_targets:
         # Generate platform PNGs
         for out_path, size in sorted(all_targets.items(), key=lambda kv: kv[1]):
             out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -221,6 +227,10 @@ def generate_icons(master_path: Path, project_root: Path, platforms=None):
         rel_ico = os.path.relpath(ico_path, project_root)
         sizes_str = ", ".join(f"{s}x{s}" for s in windows_sizes)
         print(f"[OK] ICO ({sizes_str}) -> {rel_ico}")
+
+    # Summary
+    file_count = len(all_targets) + (1 if "windows" in platforms else 0)
+    print(f"\nGenerated {file_count} icon(s) for: {', '.join(platforms)}")
 
 
 def main():
