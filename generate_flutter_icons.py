@@ -6,6 +6,7 @@ Generate platform icon PNGs for a Flutter app from a single master PNG.
 - iOS AppIcon.appiconset icons
 - macOS AppIcon.appiconset icons
 - Windows multi-size .ico for Flutter (windows/runner/resources/app_icon.ico)
+- Web favicon and PWA icons (web/favicon.png, web/icons/Icon-*.png)
 
 Usage:
     python generate_flutter_icons.py master_icon.png /path/to/flutter_project
@@ -46,6 +47,7 @@ def get_ios_icons(base: Path):
     appicon_dir = base / "ios" / "Runner" / "Assets.xcassets" / "AppIcon.appiconset"
     return {
         # iPhone & iPad notification / settings / spotlight / app icons
+        appicon_dir / "Icon-App-20x20@1x.png": 20,
         appicon_dir / "Icon-App-20x20@2x.png": 40,
         appicon_dir / "Icon-App-20x20@3x.png": 60,
 
@@ -93,6 +95,19 @@ def get_macos_icons(base: Path):
     }
 
 
+def get_web_icons(base: Path):
+    """Return mapping of output path -> pixel size for web favicon and PWA icons."""
+    web_dir = base / "web"
+    icons_dir = web_dir / "icons"
+    return {
+        web_dir / "favicon.png": 16,
+        icons_dir / "Icon-192.png": 192,
+        icons_dir / "Icon-512.png": 512,
+        icons_dir / "Icon-maskable-192.png": 192,
+        icons_dir / "Icon-maskable-512.png": 512,
+    }
+
+
 def get_windows_ico_path_and_sizes(base: Path):
     """
     Return the path for the Windows .ico file and the list of icon sizes (px).
@@ -134,6 +149,7 @@ def generate_icons(master_path: Path, project_root: Path):
     all_targets.update(get_android_icons(project_root))
     all_targets.update(get_ios_icons(project_root))
     all_targets.update(get_macos_icons(project_root))
+    all_targets.update(get_web_icons(project_root))
 
     max_target = max(all_targets.values())
     if w < max_target:
@@ -175,7 +191,7 @@ def main():
     )
     parser.add_argument(
         "project_root",
-        help="Path to the root of the Flutter project (contains android/, ios/, macos/, windows/).",
+        help="Path to the root of the Flutter project (contains android/, ios/, macos/, web/, windows/).",
     )
     args = parser.parse_args()
 
