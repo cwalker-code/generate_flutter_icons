@@ -2,7 +2,7 @@
 """
 Generate platform icon PNGs for a Flutter app from a single master PNG.
 
-- Android launcher icons (mipmap-*)
+- Android launcher icons (mipmap-*: ic_launcher, ic_launcher_round, ic_launcher_foreground)
 - iOS AppIcon.appiconset icons
 - macOS AppIcon.appiconset icons
 - Windows multi-size .ico for Flutter (windows/runner/resources/app_icon.ico)
@@ -26,16 +26,30 @@ from PIL import Image
 
 
 def get_android_icons(base: Path):
-    """Return mapping of output path -> pixel size for Android launcher icons."""
+    """Return mapping of output path -> pixel size for Android launcher icons.
+
+    Generates ic_launcher, ic_launcher_round, and ic_launcher_foreground
+    at each mipmap density. The foreground is used by the adaptive icon system
+    (Android 8.0+); it should be 108dp (1.5x the 72dp visible area) to allow
+    the launcher to mask and animate correctly.
+    """
     res_base = base / "android" / "app" / "src" / "main" / "res"
-    return {
-        # 48dp launcher at different densities
-        res_base / "mipmap-mdpi" / "ic_launcher.png": 48,
-        res_base / "mipmap-hdpi" / "ic_launcher.png": 72,
-        res_base / "mipmap-xhdpi" / "ic_launcher.png": 96,
-        res_base / "mipmap-xxhdpi" / "ic_launcher.png": 144,
-        res_base / "mipmap-xxxhdpi" / "ic_launcher.png": 192,
+    densities = {
+        "mipmap-mdpi": 1,
+        "mipmap-hdpi": 1.5,
+        "mipmap-xhdpi": 2,
+        "mipmap-xxhdpi": 3,
+        "mipmap-xxxhdpi": 4,
     }
+    targets = {}
+    for folder, scale in densities.items():
+        # Standard launcher icon: 48dp
+        targets[res_base / folder / "ic_launcher.png"] = int(48 * scale)
+        # Round launcher icon: 48dp (same size, used by launchers that show round icons)
+        targets[res_base / folder / "ic_launcher_round.png"] = int(48 * scale)
+        # Adaptive foreground layer: 108dp (provides bleed area for masking)
+        targets[res_base / folder / "ic_launcher_foreground.png"] = int(108 * scale)
+    return targets
 
 
 def get_ios_icons(base: Path):
