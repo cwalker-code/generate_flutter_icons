@@ -100,7 +100,7 @@ def get_web_icons(base: Path):
     web_dir = base / "web"
     icons_dir = web_dir / "icons"
     return {
-        web_dir / "favicon.png": 16,
+        web_dir / "favicon.png": 32,
         icons_dir / "Icon-192.png": 192,
         icons_dir / "Icon-512.png": 512,
         icons_dir / "Icon-maskable-192.png": 192,
