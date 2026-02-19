@@ -146,10 +146,23 @@ def get_windows_ico_path_and_sizes(base: Path):
     return ico_path, windows_sizes
 
 
+# ------------ platform registry -----------------
+
+PLATFORM_GENERATORS = {
+    "android": get_android_icons,
+    "ios": get_ios_icons,
+    "macos": get_macos_icons,
+    "linux": get_linux_icons,
+    "web": get_web_icons,
+}
+
+ALL_PLATFORMS = list(PLATFORM_GENERATORS.keys()) + ["windows"]
+
+
 # ------------ core logic -----------------
 
 
-def generate_icons(master_path: Path, project_root: Path):
+def generate_icons(master_path: Path, project_root: Path, platforms=None):
     if not master_path.is_file():
         raise FileNotFoundError(f"Master icon not found: {master_path}")
 
@@ -166,45 +179,48 @@ def generate_icons(master_path: Path, project_root: Path):
         img = square
         w = h = max_dim
 
-    # Collect all PNG targets
+    if platforms is None:
+        platforms = ALL_PLATFORMS
+
+    # Collect PNG targets for selected platforms
     all_targets = {}
-    all_targets.update(get_android_icons(project_root))
-    all_targets.update(get_ios_icons(project_root))
-    all_targets.update(get_macos_icons(project_root))
-    all_targets.update(get_linux_icons(project_root))
-    all_targets.update(get_web_icons(project_root))
+    for platform in platforms:
+        if platform in PLATFORM_GENERATORS:
+            all_targets.update(PLATFORM_GENERATORS[platform](project_root))
 
-    max_target = max(all_targets.values())
-    if w < max_target:
-        print(
-            f"[WARN] Master icon is {w}px, but max PNG target size is {max_target}px. "
-            f"Upscaling may reduce quality."
-        )
+    if all_targets:
+        max_target = max(all_targets.values())
+        if w < max_target:
+            print(
+                f"[WARN] Master icon is {w}px, but max PNG target size is {max_target}px. "
+                f"Upscaling may reduce quality."
+            )
 
-    # Generate platform PNGs
-    for out_path, size in sorted(all_targets.items(), key=lambda kv: kv[1]):
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+        # Generate platform PNGs
+        for out_path, size in sorted(all_targets.items(), key=lambda kv: kv[1]):
+            out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Resize with high-quality resampling
-        resized = img.resize((size, size), Image.LANCZOS)
-        resized.save(out_path, format="PNG")
-        rel = os.path.relpath(out_path, project_root)
-        print(f"[OK] {size}x{size} -> {rel}")
+            # Resize with high-quality resampling
+            resized = img.resize((size, size), Image.LANCZOS)
+            resized.save(out_path, format="PNG")
+            rel = os.path.relpath(out_path, project_root)
+            print(f"[OK] {size}x{size} -> {rel}")
 
     # Generate Windows multi-size ICO with explicit LANCZOS resizing per frame
-    ico_path, windows_sizes = get_windows_ico_path_and_sizes(project_root)
-    ico_path.parent.mkdir(parents=True, exist_ok=True)
+    if "windows" in platforms:
+        ico_path, windows_sizes = get_windows_ico_path_and_sizes(project_root)
+        ico_path.parent.mkdir(parents=True, exist_ok=True)
 
-    ico_frames = []
-    for s in windows_sizes:
-        ico_frames.append(img.resize((s, s), Image.LANCZOS))
-    # Save the smallest frame and append the rest; Pillow writes all as ICO entries
-    ico_frames[0].save(
-        ico_path, format="ICO", append_images=ico_frames[1:], sizes=[(s, s) for s in windows_sizes]
-    )
-    rel_ico = os.path.relpath(ico_path, project_root)
-    sizes_str = ", ".join(f"{s}x{s}" for s in windows_sizes)
-    print(f"[OK] ICO ({sizes_str}) -> {rel_ico}")
+        ico_frames = []
+        for s in windows_sizes:
+            ico_frames.append(img.resize((s, s), Image.LANCZOS))
+        # Save the smallest frame and append the rest; Pillow writes all as ICO entries
+        ico_frames[0].save(
+            ico_path, format="ICO", append_images=ico_frames[1:], sizes=[(s, s) for s in windows_sizes]
+        )
+        rel_ico = os.path.relpath(ico_path, project_root)
+        sizes_str = ", ".join(f"{s}x{s}" for s in windows_sizes)
+        print(f"[OK] ICO ({sizes_str}) -> {rel_ico}")
 
 
 def main():
@@ -219,12 +235,24 @@ def main():
         "project_root",
         help="Path to the root of the Flutter project (contains android/, ios/, linux/, macos/, web/, windows/).",
     )
+    parser.add_argument(
+        "--platform",
+        help=f"Comma-separated list of platforms to generate (default: all). "
+             f"Choices: {', '.join(ALL_PLATFORMS)}.",
+    )
     args = parser.parse_args()
 
     master_path = Path(args.master_icon).expanduser().resolve()
     project_root = Path(args.project_root).expanduser().resolve()
 
-    generate_icons(master_path, project_root)
+    platforms = None
+    if args.platform:
+        platforms = [p.strip().lower() for p in args.platform.split(",")]
+        invalid = [p for p in platforms if p not in ALL_PLATFORMS]
+        if invalid:
+            parser.error(f"Unknown platform(s): {', '.join(invalid)}. Choose from: {', '.join(ALL_PLATFORMS)}")
+
+    generate_icons(master_path, project_root, platforms=platforms)
 
 
 if __name__ == "__main__":
