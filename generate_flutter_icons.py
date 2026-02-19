@@ -6,6 +6,7 @@ Generate platform icon PNGs for a Flutter app from a single master PNG.
 - iOS AppIcon.appiconset icons
 - macOS AppIcon.appiconset icons
 - Windows multi-size .ico for Flutter (windows/runner/resources/app_icon.ico)
+- Linux desktop icon (linux/flutter/app_icon.png)
 - Web favicon and PWA icons (web/favicon.png, web/icons/Icon-*.png)
 
 Usage:
@@ -95,6 +96,13 @@ def get_macos_icons(base: Path):
     }
 
 
+def get_linux_icons(base: Path):
+    """Return mapping of output path -> pixel size for Linux desktop icon."""
+    return {
+        base / "linux" / "flutter" / "app_icon.png": 256,
+    }
+
+
 def get_web_icons(base: Path):
     """Return mapping of output path -> pixel size for web favicon and PWA icons."""
     web_dir = base / "web"
@@ -149,6 +157,7 @@ def generate_icons(master_path: Path, project_root: Path):
     all_targets.update(get_android_icons(project_root))
     all_targets.update(get_ios_icons(project_root))
     all_targets.update(get_macos_icons(project_root))
+    all_targets.update(get_linux_icons(project_root))
     all_targets.update(get_web_icons(project_root))
 
     max_target = max(all_targets.values())
@@ -191,7 +200,7 @@ def main():
     )
     parser.add_argument(
         "project_root",
-        help="Path to the root of the Flutter project (contains android/, ios/, macos/, web/, windows/).",
+        help="Path to the root of the Flutter project (contains android/, ios/, linux/, macos/, web/, windows/).",
     )
     args = parser.parse_args()
 
