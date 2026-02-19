@@ -191,14 +191,17 @@ def generate_icons(master_path: Path, project_root: Path):
         rel = os.path.relpath(out_path, project_root)
         print(f"[OK] {size}x{size} -> {rel}")
 
-    # Generate Windows multi-size ICO
+    # Generate Windows multi-size ICO with explicit LANCZOS resizing per frame
     ico_path, windows_sizes = get_windows_ico_path_and_sizes(project_root)
     ico_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Pillow will generate multiple sizes from the single RGBA master image.
-    # ICO format supports up to 256x256 per entry.
-    ico_sizes = [(s, s) for s in windows_sizes]
-    img.save(ico_path, format="ICO", sizes=ico_sizes)
+    ico_frames = []
+    for s in windows_sizes:
+        ico_frames.append(img.resize((s, s), Image.LANCZOS))
+    # Save the smallest frame and append the rest; Pillow writes all as ICO entries
+    ico_frames[0].save(
+        ico_path, format="ICO", append_images=ico_frames[1:], sizes=[(s, s) for s in windows_sizes]
+    )
     rel_ico = os.path.relpath(ico_path, project_root)
     sizes_str = ", ".join(f"{s}x{s}" for s in windows_sizes)
     print(f"[OK] ICO ({sizes_str}) -> {rel_ico}")
