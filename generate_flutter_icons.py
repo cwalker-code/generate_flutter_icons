@@ -52,12 +52,14 @@ def get_android_icons(base: Path):
     return targets
 
 
+IOS_PLATFORM = "ios"
+
+
 def get_ios_icons(base: Path):
     """
     Return mapping of output path -> pixel size for iOS AppIcon.appiconset.
     These filenames match the typical Xcode / Flutter Runner template.
-    You may need to tweak ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json
-    to reference these if it differs.
+    Apple requires iOS icons to have no alpha channel / transparency.
     """
     appicon_dir = base / "ios" / "Runner" / "Assets.xcassets" / "AppIcon.appiconset"
     return {
@@ -89,24 +91,19 @@ def get_ios_icons(base: Path):
 def get_macos_icons(base: Path):
     """
     Return mapping of output path -> pixel size for macOS AppIcon.appiconset.
-    Names are generic but work fine if you adjust Contents.json accordingly.
+    Filenames match the Flutter template (named by pixel size, no @2x suffixes).
+    Shared files (e.g. app_icon_32.png serves both 16@2x and 32@1x) are handled
+    by Contents.json; we just need one file per unique pixel size.
     """
     appicon_dir = base / "macos" / "Runner" / "Assets.xcassets" / "AppIcon.appiconset"
     return {
         appicon_dir / "app_icon_16.png": 16,
-        appicon_dir / "app_icon_16@2x.png": 32,
-
         appicon_dir / "app_icon_32.png": 32,
-        appicon_dir / "app_icon_32@2x.png": 64,
-
+        appicon_dir / "app_icon_64.png": 64,
         appicon_dir / "app_icon_128.png": 128,
-        appicon_dir / "app_icon_128@2x.png": 256,
-
         appicon_dir / "app_icon_256.png": 256,
-        appicon_dir / "app_icon_256@2x.png": 512,
-
         appicon_dir / "app_icon_512.png": 512,
-        appicon_dir / "app_icon_512@2x.png": 1024,
+        appicon_dir / "app_icon_1024.png": 1024,
     }
 
 
@@ -182,11 +179,16 @@ def generate_icons(master_path: Path, project_root: Path, platforms=None):
     if platforms is None:
         platforms = ALL_PLATFORMS
 
-    # Collect PNG targets for selected platforms
+    # Collect PNG targets for selected platforms, tracking iOS paths separately
+    # (Apple requires iOS icons to have no alpha channel)
     all_targets = {}
+    ios_paths = set()
     for platform in platforms:
         if platform in PLATFORM_GENERATORS:
-            all_targets.update(PLATFORM_GENERATORS[platform](project_root))
+            targets = PLATFORM_GENERATORS[platform](project_root)
+            if platform == IOS_PLATFORM:
+                ios_paths = set(targets.keys())
+            all_targets.update(targets)
 
     # Check if master icon is smaller than the largest target across all selected platforms
     all_sizes = list(all_targets.values())
@@ -208,6 +210,13 @@ def generate_icons(master_path: Path, project_root: Path, platforms=None):
 
             # Resize with high-quality resampling
             resized = img.resize((size, size), Image.LANCZOS)
+
+            # iOS icons must not contain an alpha channel (Apple rejects them)
+            if out_path in ios_paths:
+                opaque = Image.new("RGB", resized.size, (255, 255, 255))
+                opaque.paste(resized, mask=resized.split()[3])
+                resized = opaque
+
             resized.save(out_path, format="PNG")
             rel = os.path.relpath(out_path, project_root)
             print(f"[OK] {size}x{size} -> {rel}")
