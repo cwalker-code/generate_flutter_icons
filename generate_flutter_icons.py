@@ -8,6 +8,11 @@ Generate platform icon PNGs for a Flutter app from a single master PNG.
 - Windows multi-size .ico for Flutter (windows/runner/resources/app_icon.ico)
 - Linux desktop icon (linux/flutter/app_icon.png)
 - Web favicon and PWA icons (web/favicon.png, web/icons/Icon-*.png)
+- Store listing icons (appstore.png, playstore.png)
+
+Optional (must be explicitly requested via --platform):
+- ios-legacy: older iOS icon sizes (57x57, 50x50, 72x72)
+- watch: Apple Watch icons for all case sizes (38mm–49mm)
 
 Usage:
     python generate_flutter_icons.py master_icon.png /path/to/flutter_project
@@ -127,6 +132,72 @@ def get_web_icons(base: Path):
     }
 
 
+def get_store_icons(base: Path):
+    """Return mapping of output path -> pixel size for store listing icons.
+
+    appstore.png  — 1024x1024 (Apple App Store marketing icon)
+    playstore.png — 512x512   (Google Play Store listing icon)
+    """
+    return {
+        base / "appstore.png": 1024,
+        base / "playstore.png": 512,
+    }
+
+
+def get_ios_legacy_icons(base: Path):
+    """Return mapping of output path -> pixel size for legacy iOS icon sizes.
+
+    These are older sizes dropped from the current Flutter template but still
+    referenced by some Xcode projects and older deployment targets:
+      57x57 @1x/@2x (legacy iPhone app icon)
+      50x50 @1x/@2x (legacy iPad Spotlight)
+      72x72 @1x/@2x (legacy iPad app icon)
+    """
+    appicon_dir = base / "ios" / "Runner" / "Assets.xcassets" / "AppIcon.appiconset"
+    return {
+        appicon_dir / "Icon-App-57x57@1x.png": 57,
+        appicon_dir / "Icon-App-57x57@2x.png": 114,
+
+        appicon_dir / "Icon-App-50x50@1x.png": 50,
+        appicon_dir / "Icon-App-50x50@2x.png": 100,
+
+        appicon_dir / "Icon-App-72x72@1x.png": 72,
+        appicon_dir / "Icon-App-72x72@2x.png": 144,
+    }
+
+
+def get_watch_icons(base: Path):
+    """Return mapping of output path -> pixel size for Apple Watch icons.
+
+    Covers all watch case sizes (38mm–49mm) for launcher, notification,
+    quick look, and companion settings roles.
+    """
+    appicon_dir = base / "ios" / "Runner" / "Assets.xcassets" / "AppIcon.appiconset"
+    return {
+        # Notification center
+        appicon_dir / "Icon-Watch-24x24@2x.png": 48,     # 38mm
+        appicon_dir / "Icon-Watch-27.5x27.5@2x.png": 55, # 42mm
+        appicon_dir / "Icon-Watch-33x33@2x.png": 66,     # 45mm
+
+        # App launcher
+        appicon_dir / "Icon-Watch-40x40@2x.png": 80,     # 38mm
+        appicon_dir / "Icon-Watch-44x44@2x.png": 88,     # 40mm
+        appicon_dir / "Icon-Watch-46x46@2x.png": 92,     # 41mm
+        appicon_dir / "Icon-Watch-50x50@2x.png": 100,    # 44mm
+        appicon_dir / "Icon-Watch-51x51@2x.png": 102,    # 45mm
+        appicon_dir / "Icon-Watch-54x54@2x.png": 108,    # 49mm
+
+        # Quick look
+        appicon_dir / "Icon-Watch-86x86@2x.png": 172,    # 38mm
+        appicon_dir / "Icon-Watch-98x98@2x.png": 196,    # 42mm
+        appicon_dir / "Icon-Watch-108x108@2x.png": 216,  # 44mm
+        appicon_dir / "Icon-Watch-117x117@2x.png": 234,  # 45mm
+        appicon_dir / "Icon-Watch-129x129@2x.png": 258,  # 49mm
+
+        # Companion settings (reuses 58 and 87 from iOS set)
+    }
+
+
 def get_windows_ico_path_and_sizes(base: Path):
     """
     Return the path for the Windows .ico file and the list of icon sizes (px).
@@ -145,15 +216,25 @@ def get_windows_ico_path_and_sizes(base: Path):
 
 # ------------ platform registry -----------------
 
+# PNG-based platform generators (all except windows which produces ICO)
 PLATFORM_GENERATORS = {
     "android": get_android_icons,
     "ios": get_ios_icons,
     "macos": get_macos_icons,
     "linux": get_linux_icons,
     "web": get_web_icons,
+    "store": get_store_icons,
+    "ios-legacy": get_ios_legacy_icons,
+    "watch": get_watch_icons,
 }
 
-ALL_PLATFORMS = list(PLATFORM_GENERATORS.keys()) + ["windows"]
+# Default platforms included when no --platform is specified
+DEFAULT_PLATFORMS = ["android", "ios", "macos", "linux", "web", "windows", "store"]
+
+# Optional platforms that must be explicitly requested
+OPTIONAL_PLATFORMS = ["ios-legacy", "watch"]
+
+ALL_PLATFORMS = DEFAULT_PLATFORMS + OPTIONAL_PLATFORMS
 
 
 # ------------ core logic -----------------
@@ -177,17 +258,19 @@ def generate_icons(master_path: Path, project_root: Path, platforms=None):
         w = h = max_dim
 
     if platforms is None:
-        platforms = ALL_PLATFORMS
+        platforms = DEFAULT_PLATFORMS
 
-    # Collect PNG targets for selected platforms, tracking iOS paths separately
-    # (Apple requires iOS icons to have no alpha channel)
+    # Platforms whose icons must have no alpha channel (Apple rejects transparency)
+    apple_icon_platforms = {IOS_PLATFORM, "ios-legacy", "watch"}
+
+    # Collect PNG targets for selected platforms, tracking Apple paths separately
     all_targets = {}
-    ios_paths = set()
+    no_alpha_paths = set()
     for platform in platforms:
         if platform in PLATFORM_GENERATORS:
             targets = PLATFORM_GENERATORS[platform](project_root)
-            if platform == IOS_PLATFORM:
-                ios_paths = set(targets.keys())
+            if platform in apple_icon_platforms:
+                no_alpha_paths.update(targets.keys())
             all_targets.update(targets)
 
     # Check if master icon is smaller than the largest target across all selected platforms
@@ -211,8 +294,8 @@ def generate_icons(master_path: Path, project_root: Path, platforms=None):
             # Resize with high-quality resampling
             resized = img.resize((size, size), Image.LANCZOS)
 
-            # iOS icons must not contain an alpha channel (Apple rejects them)
-            if out_path in ios_paths:
+            # Apple icons must not contain an alpha channel (Apple rejects them)
+            if out_path in no_alpha_paths:
                 opaque = Image.new("RGB", resized.size, (255, 255, 255))
                 opaque.paste(resized, mask=resized.split()[3])
                 resized = opaque
@@ -256,8 +339,9 @@ def main():
     )
     parser.add_argument(
         "--platform",
-        help=f"Comma-separated list of platforms to generate (default: all). "
-             f"Choices: {', '.join(ALL_PLATFORMS)}.",
+        help=f"Comma-separated list of platforms to generate. "
+             f"Default: {', '.join(DEFAULT_PLATFORMS)}. "
+             f"Optional extras: {', '.join(OPTIONAL_PLATFORMS)}.",
     )
     args = parser.parse_args()
 
