@@ -170,7 +170,8 @@ def get_watch_icons(base: Path):
     """Return mapping of output path -> pixel size for Apple Watch icons.
 
     Covers all watch case sizes (38mm–49mm) for launcher, notification,
-    quick look, and companion settings roles.
+    and quick look roles. Companion settings icons (58px, 87px) are not
+    included here as they are shared with the standard iOS icon set.
     """
     appicon_dir = base / "ios" / "Runner" / "Assets.xcassets" / "AppIcon.appiconset"
     return {
@@ -193,8 +194,6 @@ def get_watch_icons(base: Path):
         appicon_dir / "Icon-Watch-108x108@2x.png": 216,  # 44mm
         appicon_dir / "Icon-Watch-117x117@2x.png": 234,  # 45mm
         appicon_dir / "Icon-Watch-129x129@2x.png": 258,  # 49mm
-
-        # Companion settings (reuses 58 and 87 from iOS set)
     }
 
 
@@ -248,7 +247,7 @@ def generate_icons(master_path: Path, project_root: Path, platforms=None):
     w, h = img.size
 
     if w != h:
-        print(f"[WARN] Master icon is not square ({w}x{h}). It will be resized with aspect preserved and padded.")
+        print(f"[WARN] Master icon is not square ({w}x{h}). It will be padded to square with transparent pixels.")
         # Make it square by padding to max dimension
         max_dim = max(w, h)
         square = Image.new("RGBA", (max_dim, max_dim), (0, 0, 0, 0))
