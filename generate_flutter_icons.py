@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate platform icon PNGs for a Flutter app from a single master PNG.
+Generate platform icon PNGs for a Flutter app from a single master image (PNG or SVG).
 
 - Android launcher icons (mipmap-*: ic_launcher, ic_launcher_round, ic_launcher_foreground)
 - iOS AppIcon.appiconset icons
@@ -16,11 +16,17 @@ Optional (must be explicitly requested via --platform):
 
 Usage:
     python generate_flutter_icons.py master_icon.png /path/to/flutter_project
+    python generate_flutter_icons.py master_icon.svg /path/to/flutter_project
+
+PNG input is resized with Pillow (LANCZOS). SVG input requires pyvips
+(pip install pyvips) and each icon is rasterized directly from the vector
+at its exact target size for maximum sharpness.
 
 The flutter_project path should be the root (with android/, ios/, linux/, macos/, web/, windows/ folders).
 """
 
 import argparse
+import io
 import os
 from pathlib import Path
 
@@ -236,6 +242,24 @@ OPTIONAL_PLATFORMS = ["ios-legacy", "watch"]
 ALL_PLATFORMS = DEFAULT_PLATFORMS + OPTIONAL_PLATFORMS
 
 
+# ------------ SVG rasterization -----------------
+
+
+def _svg_to_pil(svg_path: Path, size: int) -> Image.Image:
+    """Rasterize an SVG to a Pillow RGBA image at the given size using pyvips."""
+    import pyvips
+    image = pyvips.Image.thumbnail(str(svg_path), size, height=size)
+    png_data = image.write_to_buffer(".png")
+    return Image.open(io.BytesIO(png_data)).convert("RGBA")
+
+
+def _strip_alpha(img: Image.Image) -> Image.Image:
+    """Composite an RGBA image onto a white background, returning an RGB image."""
+    opaque = Image.new("RGB", img.size, (255, 255, 255))
+    opaque.paste(img, mask=img.split()[3])
+    return opaque
+
+
 # ------------ core logic -----------------
 
 
@@ -243,18 +267,33 @@ def generate_icons(master_path: Path, project_root: Path, platforms=None):
     if not master_path.is_file():
         raise FileNotFoundError(f"Master icon not found: {master_path}")
 
-    img = Image.open(master_path).convert("RGBA")
-    w, h = img.size
+    is_svg = master_path.suffix.lower() == ".svg"
 
-    if w != h:
-        print(f"[WARN] Master icon is not square ({w}x{h}). It will be padded to square with transparent pixels.")
-        # Make it square by padding to max dimension
-        max_dim = max(w, h)
-        square = Image.new("RGBA", (max_dim, max_dim), (0, 0, 0, 0))
-        offset = ((max_dim - w) // 2, (max_dim - h) // 2)
-        square.paste(img, offset)
-        img = square
-        w = h = max_dim
+    if is_svg:
+        # Validate cairosvg is available before doing any work
+        try:
+            import pyvips  # noqa: F401
+        except ImportError:
+            raise RuntimeError(
+                "SVG input requires pyvips. Install it with:\n"
+                "  pip install pyvips"
+            )
+        print("[INFO] SVG input — each icon will be rasterized at its exact target size.")
+        svg_path = master_path
+        img = None
+    else:
+        img = Image.open(master_path).convert("RGBA")
+        svg_path = None
+        w, h = img.size
+
+        if w != h:
+            print(f"[WARN] Master icon is not square ({w}x{h}). It will be padded to square with transparent pixels.")
+            max_dim = max(w, h)
+            square = Image.new("RGBA", (max_dim, max_dim), (0, 0, 0, 0))
+            offset = ((max_dim - w) // 2, (max_dim - h) // 2)
+            square.paste(img, offset)
+            img = square
+            w = h = max_dim
 
     if platforms is None:
         platforms = DEFAULT_PLATFORMS
@@ -272,46 +311,50 @@ def generate_icons(master_path: Path, project_root: Path, platforms=None):
                 no_alpha_paths.update(targets.keys())
             all_targets.update(targets)
 
-    # Check if master icon is smaller than the largest target across all selected platforms
-    all_sizes = list(all_targets.values())
-    if "windows" in platforms:
-        _, windows_sizes = get_windows_ico_path_and_sizes(project_root)
-        all_sizes.extend(windows_sizes)
-    if all_sizes:
-        max_target = max(all_sizes)
-        if w < max_target:
-            print(
-                f"[WARN] Master icon is {w}px, but max target size is {max_target}px. "
-                f"Upscaling may reduce quality."
-            )
+    # Upscale warning (PNG only — SVG renders crisply at any size)
+    if not is_svg:
+        all_sizes = list(all_targets.values())
+        if "windows" in platforms:
+            _, windows_sizes = get_windows_ico_path_and_sizes(project_root)
+            all_sizes.extend(windows_sizes)
+        if all_sizes:
+            max_target = max(all_sizes)
+            if w < max_target:
+                print(
+                    f"[WARN] Master icon is {w}px, but max target size is {max_target}px. "
+                    f"Upscaling may reduce quality."
+                )
 
     if all_targets:
         # Generate platform PNGs
         for out_path, size in sorted(all_targets.items(), key=lambda kv: kv[1]):
             out_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Resize with high-quality resampling
-            resized = img.resize((size, size), Image.LANCZOS)
+            if is_svg:
+                resized = _svg_to_pil(svg_path, size)
+            else:
+                resized = img.resize((size, size), Image.LANCZOS)
 
             # Apple icons must not contain an alpha channel (Apple rejects them)
             if out_path in no_alpha_paths:
-                opaque = Image.new("RGB", resized.size, (255, 255, 255))
-                opaque.paste(resized, mask=resized.split()[3])
-                resized = opaque
+                resized = _strip_alpha(resized)
 
             resized.save(out_path, format="PNG")
             rel = os.path.relpath(out_path, project_root)
             print(f"[OK] {size}x{size} -> {rel}")
 
-    # Generate Windows multi-size ICO with explicit LANCZOS resizing per frame
+    # Generate Windows multi-size ICO
     if "windows" in platforms:
         ico_path, windows_sizes = get_windows_ico_path_and_sizes(project_root)
         ico_path.parent.mkdir(parents=True, exist_ok=True)
 
         ico_frames = []
         for s in windows_sizes:
-            ico_frames.append(img.resize((s, s), Image.LANCZOS))
-        # Save the smallest frame and append the rest; Pillow writes all as ICO entries
+            if is_svg:
+                ico_frames.append(_svg_to_pil(svg_path, s))
+            else:
+                ico_frames.append(img.resize((s, s), Image.LANCZOS))
+
         ico_frames[0].save(
             ico_path, format="ICO", append_images=ico_frames[1:], sizes=[(s, s) for s in windows_sizes]
         )
@@ -326,11 +369,12 @@ def generate_icons(master_path: Path, project_root: Path, platforms=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate Flutter platform icons from a master PNG."
+        description="Generate Flutter platform icons from a master PNG or SVG."
     )
     parser.add_argument(
         "master_icon",
-        help="Path to master PNG (preferably 1024x1024 with transparency).",
+        help="Path to master image — PNG (preferably 1024x1024 with transparency) or SVG. "
+             "SVG support requires pyvips (pip install pyvips).",
     )
     parser.add_argument(
         "project_root",

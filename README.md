@@ -1,6 +1,6 @@
 # generate_flutter_icons
 
-Generate all platform icon assets for a Flutter app from a single master PNG.
+Generate all platform icon assets for a Flutter app from a single master PNG or SVG.
 
 One command replaces your icons across Android, iOS, macOS, Windows, Linux, and Web — matching the exact paths and filenames Flutter expects.
 
@@ -8,9 +8,11 @@ One command replaces your icons across Android, iOS, macOS, Windows, Linux, and 
 
 - Python 3.7+
 - [Pillow](https://pypi.org/project/Pillow/)
+- [pyvips](https://pypi.org/project/pyvips/) (optional — only needed for SVG input)
 
 ```bash
 pip install Pillow
+pip install pyvips   # optional, for SVG input
 ```
 
 ## Usage
@@ -23,7 +25,7 @@ python generate_flutter_icons.py <master_icon> <project_root> [--platform <platf
 
 | Argument | Description |
 |---|---|
-| `master_icon` | Path to your master PNG (ideally 1024x1024 with transparency) |
+| `master_icon` | Path to your master PNG (ideally 1024x1024 with transparency) or SVG |
 | `project_root` | Root of your Flutter project (contains `android/`, `ios/`, etc.) |
 | `--platform` | Comma-separated list of platforms (see below) |
 
@@ -36,8 +38,11 @@ python generate_flutter_icons.py <master_icon> <project_root> [--platform <platf
 **Examples:**
 
 ```bash
-# Generate all default platform icons
+# Generate all default platform icons from a PNG
 python generate_flutter_icons.py icon.png ./my_flutter_app
+
+# Generate all default platform icons from an SVG (requires pyvips)
+python generate_flutter_icons.py icon.svg ./my_flutter_app
 
 # Generate only for web and android
 python generate_flutter_icons.py icon.png ./my_flutter_app --platform android,web
@@ -100,11 +105,10 @@ Output: `ios/Runner/Assets.xcassets/AppIcon.appiconset/`
 
 ## Notes
 
-- Non-square master images are automatically padded to square with transparent pixels.
+- **SVG input**: Each icon is rasterized directly from the vector at its exact target size using pyvips (librsvg), so every icon is pixel-perfect with no downscaling artifacts. Gradients, filters, and other SVG features are fully supported.
+- **PNG input**: Resized with LANCZOS resampling. Non-square images are padded to square with transparent pixels. A warning is shown if the master image is smaller than the largest target size.
 - iOS, legacy iOS, and Apple Watch icons are flattened to RGB (no alpha) as required by Apple.
-- A warning is shown if the master image is smaller than the largest target size.
-- All PNG resizing uses LANCZOS resampling for best quality.
-- Windows ICO frames are individually resized with LANCZOS before being packed.
+- Windows ICO frames are individually rendered at each size before being packed.
 
 ## License
 
