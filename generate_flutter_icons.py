@@ -246,11 +246,23 @@ ALL_PLATFORMS = DEFAULT_PLATFORMS + OPTIONAL_PLATFORMS
 
 
 def _svg_to_pil(svg_path: Path, size: int) -> Image.Image:
-    """Rasterize an SVG to a Pillow RGBA image at the given size using pyvips."""
+    """Rasterize an SVG to a Pillow RGBA image at the given size using pyvips.
+
+    The SVG is fitted within a size x size box (preserving aspect ratio),
+    then centered on a transparent square canvas if the SVG is not square.
+    """
     import pyvips
     image = pyvips.Image.thumbnail(str(svg_path), size, height=size)
     png_data = image.write_to_buffer(".png")
-    return Image.open(io.BytesIO(png_data)).convert("RGBA")
+    rendered = Image.open(io.BytesIO(png_data)).convert("RGBA")
+
+    # Pad to exact square if the SVG viewBox wasn't square
+    if rendered.size != (size, size):
+        square = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        offset = ((size - rendered.width) // 2, (size - rendered.height) // 2)
+        square.paste(rendered, offset)
+        return square
+    return rendered
 
 
 def _strip_alpha(img: Image.Image) -> Image.Image:
