@@ -19,13 +19,14 @@ Single-file Python CLI tool that generates multi-resolution icon assets for Flut
 python generate_flutter_icons.py <master_icon.png|.svg> <flutter_project_path> [--platform android,ios,...]
 ```
 
-Default platforms: android, ios, macos, linux, web, windows, store
+Default platforms: android, ios, macos, linux, web, windows, msix, store
 Optional platforms: ios-legacy, watch
 
 ## Code Architecture
 
 - **Platform generators** (functions returning `dict[Path, int]`): `get_android_icons()`, `get_ios_icons()`, etc.
 - **Registry pattern**: `PLATFORM_GENERATORS` dict maps platform names to generator functions
+- **Windows ICO special case**: Windows ICO generation has its own code path in `generate_icons()`, separate from `PLATFORM_GENERATORS` (which only handles PNG output)
 - **Core function**: `generate_icons()` orchestrates the workflow
 - **CLI entry point**: `argparse`-based at bottom of file
 

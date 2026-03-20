@@ -6,6 +6,7 @@ Generate platform icon PNGs for a Flutter app from a single master image (PNG or
 - iOS AppIcon.appiconset icons
 - macOS AppIcon.appiconset icons
 - Windows multi-size .ico for Flutter (windows/runner/resources/app_icon.ico)
+- MSIX packaging logo (windows/runner/resources/msix_icon.png)
 - Linux desktop icon (linux/flutter/app_icon.png)
 - Web favicon and PWA icons (web/favicon.png, web/icons/Icon-*.png)
 - Store listing icons (appstore.png, playstore.png)
@@ -219,6 +220,23 @@ def get_windows_ico_path_and_sizes(base: Path):
     return ico_path, windows_sizes
 
 
+def get_msix_icons(base: Path):
+    """Return mapping of output path -> pixel size for MSIX packaging logo.
+
+    The msix Dart package (dart run msix:create) reads a single logo PNG
+    from the path specified in pubspec.yaml's msix_config.logo_path.
+    It then auto-generates all required scaled variants (Square44x44Logo,
+    Square150x150Logo, StoreLogo) at 100%–400% scales.
+
+    We generate a 512x512 source logo — large enough for the msix package
+    to downscale cleanly to all required sizes (max generated: 600x600
+    for Square150x150Logo.scale-400).
+    """
+    return {
+        base / "windows" / "runner" / "resources" / "msix_icon.png": 512,
+    }
+
+
 # ------------ platform registry -----------------
 
 # PNG-based platform generators (all except windows which produces ICO)
@@ -231,10 +249,11 @@ PLATFORM_GENERATORS = {
     "store": get_store_icons,
     "ios-legacy": get_ios_legacy_icons,
     "watch": get_watch_icons,
+    "msix": get_msix_icons,
 }
 
 # Default platforms included when no --platform is specified
-DEFAULT_PLATFORMS = ["android", "ios", "macos", "linux", "web", "windows", "store"]
+DEFAULT_PLATFORMS = ["android", "ios", "macos", "linux", "web", "windows", "msix", "store"]
 
 # Optional platforms that must be explicitly requested
 OPTIONAL_PLATFORMS = ["ios-legacy", "watch"]
